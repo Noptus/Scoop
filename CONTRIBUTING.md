@@ -10,12 +10,16 @@ Thanks for your interest in contributing! Here's how to get started.
    cp .env.example .env
    ```
 3. Fill in your API keys (see `.env.example` for details).
-4. Install dependencies:
+4. Enable the secret-blocking pre-commit hook:
+   ```bash
+   git config core.hooksPath .githooks
+   ```
+5. Install dependencies:
    ```bash
    cd backend
    python3 -m pip install -r requirements.txt
    ```
-5. Run the dev server:
+6. Run the dev server:
    ```bash
    python3 -m uvicorn main:app --reload
    ```

@@ -16,9 +16,13 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from exceptions import ConfigError
 
@@ -39,13 +43,40 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(title="Scoop API", version="0.2.0", lifespan=lifespan)
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
+    return Response(
+        content='{"detail":"Too many requests"}',
+        status_code=429,
+        media_type="application/json",
+    )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'none'"
+    response.headers["Strict-Transport-Security"] = (
+        "max-age=31536000; includeSubDomains"
+    )
+    return response
+
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_methods=["POST", "GET"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Accept"],
+    allow_credentials=False,
 )
 
 
@@ -101,7 +132,8 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/api/subscribe")
-async def subscribe(req: SubscribeRequest) -> dict[str, str]:
+@limiter.limit("5/minute")
+async def subscribe(request: Request, req: SubscribeRequest) -> dict[str, str]:
     """Sign up a new user from the landing page."""
     product, companies = _validate_subscribe(req)
 
@@ -122,7 +154,8 @@ async def subscribe(req: SubscribeRequest) -> dict[str, str]:
 
 
 @app.post("/api/digest")
-async def run_digest(req: DigestRequest) -> dict[str, str | int]:
+@limiter.limit("2/minute")
+async def run_digest(request: Request, req: DigestRequest) -> dict[str, str | int]:
     """Run the weekly digest pipeline. Called by GitHub Actions cron."""
     expected = os.getenv("CRON_SECRET", "")
     if not expected:

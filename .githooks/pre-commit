@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Pre-commit hook: block commits that contain secret patterns.
+# Install:  git config core.hooksPath .githooks
+
+set -euo pipefail
+
+PATTERNS=(
+  'pplx-[A-Za-z0-9]'
+  'sk-[A-Za-z0-9]{10,}'
+  'sb_secret_'
+  'gulq fxwi'
+  'GMAIL_APP_PASSWORD=[^ ]'
+  'whsec_'
+)
+
+ALLOW_RE='(\.env\.example|\.githooks/pre-commit)'
+
+failed=0
+for pattern in "${PATTERNS[@]}"; do
+  # Check each staged file individually
+  for file in $(git diff --cached --name-only --diff-filter=ACMR); do
+    # Skip allowed files
+    if echo "$file" | grep -qE "$ALLOW_RE"; then
+      continue
+    fi
+    match=$(git diff --cached -U0 -- "$file" \
+      | grep -E "^\+" \
+      | grep -v "^+++" \
+      | grep -E "$pattern" \
+      | head -3 || true)
+    if [ -n "$match" ]; then
+      echo "BLOCKED in $file: matches secret pattern: $pattern"
+      echo "$match"
+      failed=1
+    fi
+  done
+done
+
+if [ "$failed" -eq 1 ]; then
+  echo ""
+  echo "Commit blocked. Remove secrets before committing."
+  echo "If this is a false positive, use: git commit --no-verify"
+  exit 1
+fi

@@ -109,6 +109,31 @@ async def create_user(email: str, product: str, companies: list[str]) -> dict:
 
 # ── Digests ───────────────────────────────────
 
+async def get_last_digest(user_id: str) -> list[dict]:
+    """Fetch the most recent digest items for a user (for dedup)."""
+    if not SUPABASE_URL:
+        return []
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                _url("digests"),
+                headers=_headers(),
+                params={
+                    "user_id": f"eq.{user_id}",
+                    "select": "items",
+                    "order": "sent_at.desc",
+                    "limit": "1",
+                },
+            )
+            resp.raise_for_status()
+            rows = resp.json()
+            return rows[0]["items"] if rows else []
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Failed to fetch last digest for dedup: %s", exc)
+        return []
+
+
 async def save_digest(user_id: str, items: list[dict]) -> None:
     """Save a sent digest for history/dedup."""
     if not user_id or not user_id.strip():

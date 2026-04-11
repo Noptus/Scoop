@@ -5,12 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Scoop - We fetch. You close.</title>
   <meta name="description" content="Account intelligence that finds the signals that matter for your deals. Delivered to your inbox every Monday.">
-  <meta name="theme-color" content="#6366f1" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#818cf8" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#6366f1">
 
   <!-- Open Graph -->
-  <meta property="og:title" content="Scoop — Account intelligence for B2B sales teams">
-  <meta property="og:description" content="Scoop fetches signals that matter for your deals. Executive changes, funding, M&A, hiring — delivered to your inbox every Monday.">
+  <meta property="og:title" content="Scoop - Account intelligence for B2B sales teams">
+  <meta property="og:description" content="Scoop fetches signals that matter for your deals. Executive changes, funding, M&amp;A, hiring. Delivered to your inbox every Monday.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://noptus.github.io/Scoop">
   <meta property="og:site_name" content="Scoop">
@@ -18,8 +17,8 @@
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Scoop — Account intelligence for B2B sales teams">
-  <meta name="twitter:description" content="Scoop fetches signals that matter for your deals. Executive changes, funding, M&A, hiring — delivered to your inbox every Monday.">
+  <meta name="twitter:title" content="Scoop - Account intelligence for B2B sales teams">
+  <meta name="twitter:description" content="Scoop fetches signals that matter for your deals. Executive changes, funding, M&amp;A, hiring. Delivered to your inbox every Monday.">
 
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -37,8 +36,6 @@
         <a href="#how-it-works">How it works</a>
         <a href="#preview">Example</a>
         <a href="#faq">FAQ</a>
-        <a href="https://github.com/Noptus/Scoop" target="_blank" rel="noopener">GitHub</a>
-        <a href="#signup" class="btn btn--sm">Get started</a>
       </div>
     </div>
   </nav>
@@ -48,13 +45,13 @@
     <div class="container">
       <div class="hero__badge">Account intelligence for B2B sales teams</div>
       <h1 class="hero__title">Scoop fetches,<br><span class="hero__title-gradient">you close.</span></h1>
-      <p class="hero__subtitle">Know what's happening at your accounts before your next call. Executive moves, funding, M&A, hiring signals — delivered every Monday.</p>
+      <p class="hero__subtitle">Know what's happening at your accounts before your next call. Executive moves, funding, M&A, hiring signals. Delivered every Monday.</p>
 
       <form id="hero-form" class="hero__form" novalidate>
         <input class="hero__input" type="email" id="hero-email" placeholder="you@company.com" required autocomplete="email" aria-label="Email address">
         <button type="submit" class="btn btn--lg">Get started free</button>
       </form>
-      <p class="hero__note">Free forever for up to 5 accounts. No credit card.</p>
+      <p class="hero__note">Free forever for up to 10 accounts. No credit card.</p>
     </div>
   </header>
 
@@ -84,7 +81,7 @@
         <div class="steps__item reveal reveal-delay-1">
           <div class="steps__number">🦴</div>
           <h3>Toss us a list</h3>
-          <p>Paste your top accounts and tell us what you sell. That's the entire setup — no integrations, no CRM sync.</p>
+          <p>Paste your top accounts and tell us what you sell. That's the entire setup. No integrations, no CRM sync.</p>
         </div>
         <div class="steps__item reveal reveal-delay-2">
           <div class="steps__number">👃</div>
@@ -122,7 +119,7 @@
         <div class="preview__item">
           <span class="preview__tag preview__tag--green">Hiring Signal</span>
           <p class="preview__company">Datadog</p>
-          <p class="preview__headline">14 "Sales Engineer" roles posted in 2 weeks — all enterprise-focused, EMEA region.</p>
+          <p class="preview__headline">14 "Sales Engineer" roles posted in 2 weeks. All enterprise-focused, EMEA region.</p>
           <p class="preview__why">Hiring velocity signals EMEA expansion budget. Likely evaluating new tools to scale the SE team.</p>
         </div>
 
@@ -130,7 +127,7 @@
           <span class="preview__tag preview__tag--amber">Competitive</span>
           <p class="preview__company">HubSpot</p>
           <p class="preview__headline">Blog post by VP Engineering mentions evaluating "alternatives to our current observability stack."</p>
-          <p class="preview__why">Active vendor evaluation in progress. Reach out before they shortlist — the window closes when the RFP drops.</p>
+          <p class="preview__why">Active vendor evaluation in progress. Reach out before they shortlist. The window closes when the RFP drops.</p>
         </div>
       </div>
     </div>
@@ -197,7 +194,7 @@
           </div>
         </div>
         <button type="submit" class="btn btn--lg btn--full" id="btn-submit">
-          <span class="btn__text">Subscribe — it's free</span>
+          <span class="btn__text">Subscribe, it's free</span>
           <span class="btn__loader" hidden>
             <svg class="spinner" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="60 30"/></svg>
             Setting up your digest...
@@ -208,23 +205,7 @@
       <div id="signup-success" class="signup-success" hidden>
         <div class="signup-success__icon">🗞️</div>
         <h2>You're in!</h2>
-        <p>Your first digest arrives Monday at 7 am. We'll cover all the accounts you listed. No login needed — just open your email.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Tech stack -->
-  <section class="tech" id="tech">
-    <div class="container">
-      <h2 class="section__title reveal">Built with</h2>
-      <p class="section__subtitle reveal">Open source. Self-hostable. MIT licensed.</p>
-      <div class="tech__grid reveal">
-        <span class="tech__badge"><span class="tech__badge-icon">🐍</span> Python + FastAPI</span>
-        <span class="tech__badge"><span class="tech__badge-icon">🔍</span> Perplexity Sonar Pro</span>
-        <span class="tech__badge"><span class="tech__badge-icon">🐘</span> Supabase (PostgreSQL)</span>
-        <span class="tech__badge"><span class="tech__badge-icon">📧</span> Gmail SMTP</span>
-        <span class="tech__badge"><span class="tech__badge-icon">⚡</span> GitHub Actions</span>
-        <span class="tech__badge"><span class="tech__badge-icon">🚀</span> Zero dependencies frontend</span>
+        <p>Your first digest arrives Monday at 7 am. We'll cover all the accounts you listed. No login needed. Just open your email.</p>
       </div>
     </div>
   </section>
@@ -232,7 +213,7 @@
   <!-- FAQ -->
   <section class="faq" id="faq">
     <div class="container">
-      <h2 class="section__title reveal">Questions</h2>
+      <h2 class="section__title reveal">FAQ</h2>
       <div class="faq__grid">
         <details class="faq__item reveal">
           <summary>What kind of signals does Scoop detect?</summary>
@@ -252,7 +233,7 @@
         </details>
         <details class="faq__item reveal">
           <summary>Is it really free?</summary>
-          <p>Free forever for up to 5 accounts. No credit card required. Reply "stop" to any digest to unsubscribe instantly.</p>
+          <p>Free forever for up to 10 accounts. No credit card required. Reply "stop" to any digest to unsubscribe instantly.</p>
         </details>
         <details class="faq__item reveal">
           <summary>Can I self-host Scoop?</summary>
@@ -278,10 +259,9 @@
     <div class="container footer__inner">
       <div class="footer__brand">🐶🗞️ Scoop</div>
       <div class="footer__links">
-        <a href="https://github.com/Noptus/Scoop" target="_blank" rel="noopener">GitHub</a>
         <a href="#faq">FAQ</a>
       </div>
-      <p class="footer__copy">&copy; 2026 Scoop. MIT License.</p>
+      <p class="footer__copy">&copy; 2026 Scoop. Built by Raphael Caillon.</p>
     </div>
   </footer>
 

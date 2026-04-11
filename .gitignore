@@ -16,12 +16,13 @@ venv/
 node_modules/
 .next/
 
-# IDE
+# IDE / local tooling
 .vscode/
 .idea/
 *.swp
 *.swo
 .DS_Store
+.claude/
 
 # Runtime state
 .reply_threads.json

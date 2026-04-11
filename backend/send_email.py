@@ -99,76 +99,191 @@ async def send_welcome_email(email: str) -> None:
     await loop.run_in_executor(None, send_raw_email, email, subject, html)
 
 
+def _render_source_links(sources: list) -> str:
+    """Render source URLs as clickable links."""
+    if not sources:
+        return ""
+    links = []
+    for url in sources[:3]:
+        if not isinstance(url, str):
+            continue
+        # Extract domain for display
+        display = html_escape(url)
+        try:
+            domain = url.split("//")[-1].split("/")[0].replace("www.", "")
+        except Exception:
+            domain = display[:40]
+        links.append(
+            f'<a href="{display}" style="color:#6366f1; text-decoration:none; '
+            f'font-size:12px;">{html_escape(domain)}</a>'
+        )
+    if not links:
+        return ""
+    return (
+        '<p style="margin:12px 0 0; padding:8px 0 0; '
+        'border-top:1px solid #f1f5f9; font-size:12px; color:#94a3b8;">'
+        "Source: " + " · ".join(links) + "</p>"
+    )
+
+
 def render_digest(user: dict, items: list[dict]) -> str:
     """Build the HTML digest email."""
     today = date.today()
     next_monday = today + timedelta(days=(7 - today.weekday()) % 7 or 7)
 
     tag_colors: dict[str, dict[str, str]] = {
-        "red": {"bg": "#fef2f2", "fg": "#ef4444"},
-        "green": {"bg": "#ecfdf5", "fg": "#10b981"},
-        "amber": {"bg": "#fffbeb", "fg": "#f59e0b"},
-        "blue": {"bg": "#eff6ff", "fg": "#3b82f6"},
+        "red": {"bg": "#fef2f2", "fg": "#dc2626", "border": "#fecaca"},
+        "green": {"bg": "#ecfdf5", "fg": "#059669", "border": "#a7f3d0"},
+        "amber": {"bg": "#fffbeb", "fg": "#d97706", "border": "#fde68a"},
+        "blue": {"bg": "#eff6ff", "fg": "#2563eb", "border": "#bfdbfe"},
     }
 
+    urgency_styles: dict[str, dict[str, str]] = {
+        "IMMEDIATE": {"bg": "#dc2626", "fg": "#ffffff", "label": "ACT NOW"},
+        "THIS_WEEK": {"bg": "#f59e0b", "fg": "#ffffff", "label": "THIS WEEK"},
+        "THIS_MONTH": {"bg": "#6366f1", "fg": "#ffffff", "label": "THIS MONTH"},
+        "THIS_QUARTER": {"bg": "#94a3b8", "fg": "#ffffff", "label": "THIS QUARTER"},
+    }
+
+    # ── Signal cards ──
     items_html = ""
-    for item in items:
+    for i, item in enumerate(items):
         colors = tag_colors.get(item.get("tag_color", "blue"), tag_colors["blue"])
         is_risk = item.get("risk_or_opportunity", "") in ("risk", "both")
+        urgency_key = item.get("urgency", "THIS_QUARTER")
+        urgency = urgency_styles.get(urgency_key, urgency_styles["THIS_QUARTER"])
 
-        # Escape all user/API-sourced strings before embedding in HTML
+        # Escape all user/API-sourced strings
         tag = html_escape(item.get("tag", ""))
         company = html_escape(item.get("company", ""))
         headline = html_escape(item.get("headline", ""))
-
-        # Compact tag line: [Tag] [RISK] Company
-        risk_badge = ' <span style="font-size:10px; font-weight:700; color:#dc2626;">⚠ RISK</span>' if is_risk else ""
-
-        # Why + window merged into one short block
         why_text = html_escape(item.get("why", ""))
         window = html_escape(item.get("window", ""))
+        action = html_escape(item.get("suggested_action", ""))
+        opener = html_escape(item.get("opening_line", ""))
+        signal_date = html_escape(item.get("date", ""))
+        sources = item.get("sources", [])
+
+        # Why block with timing window on its own line
+        why_block = why_text
         if window:
-            why_text += f" <em style='color:#64748b;'>({window})</em>"
+            why_block += f'<br><span style="color:#6366f1; font-weight:600; font-size:12px;">&#9200; {window}</span>'
 
-        # Action line
-        action_html = ""
-        if item.get("suggested_action"):
-            action_html = f'<p style="margin:6px 0 0; font-size:12px; color:#6366f1; font-weight:600;">→ {html_escape(item["suggested_action"])}</p>'
+        # Card border and background for risk signals
+        card_bg = "#fff5f5" if is_risk else "#ffffff"
+        card_border = colors["fg"]
 
-        # Opening line
-        opener_html = ""
-        if item.get("opening_line"):
-            opener_html = f'<p style="margin:6px 0 0; font-size:12px; color:#64748b;">💬 <em>"{html_escape(item["opening_line"])}"</em></p>'
+        # Urgency badge only
+        badge_html = (
+            f'<span style="display:inline; padding:2px 8px; border-radius:3px; '
+            f'background:{urgency["bg"]}; color:{urgency["fg"]}; '
+            f'font-size:10px; font-weight:700; letter-spacing:0.05em;">{urgency["label"]}</span>'
+        )
+
+        # Header line: COMPANY · Tag · Date
+        date_html = ""
+        if signal_date:
+            date_html = f' <span style="color:#94a3b8; font-weight:400;">· {signal_date}</span>'
+
+        # "Scoop recommends" block: action + opening line bundled
+        recommend_html = ""
+        if action or opener:
+            inner = ""
+            if action:
+                inner += (
+                    f'<p style="margin:0; font-size:13px; line-height:1.5; '
+                    f'color:#4f46e5; font-weight:600;">&#10140; {action}</p>'
+                )
+            if opener:
+                inner += (
+                    f'<p style="margin:{"8" if action else "0"}px 0 0; font-size:13px; '
+                    f'font-style:italic; line-height:1.5; color:#334155;">'
+                    f'&ldquo;{opener}&rdquo;</p>'
+                )
+            recommend_html = (
+                f'<table cellpadding="0" cellspacing="0" width="100%" style="margin:14px 0 0;">'
+                f'<tr><td style="background:#f8fafc; border-radius:6px; padding:12px 16px; '
+                f'border-left:3px solid #c7d2fe;">'
+                f'<p style="margin:0 0 6px; font-size:10px; font-weight:700; color:#6366f1; '
+                f'text-transform:uppercase; letter-spacing:0.06em;">Scoop recommends</p>'
+                f'{inner}'
+                f'</td></tr></table>'
+            )
+
+        # Source links
+        source_html = _render_source_links(sources)
 
         items_html += f"""
-        <tr><td style="padding:16px 24px; border-bottom:1px solid #f1f5f9;">
-          <p style="margin:0 0 4px; font-size:11px;"><span style="display:inline; font-weight:600; padding:2px 6px; border-radius:100px; background:{colors['bg']}; color:{colors['fg']}; text-transform:uppercase; letter-spacing:0.04em;">{tag}</span>{risk_badge}</p>
-          <p style="margin:0 0 6px; font-size:14px; font-weight:700; color:#0f172a;">{company}</p>
-          <p style="margin:0 0 8px; font-size:13px; line-height:1.5; color:#475569;">{headline}</p>
-          <p style="margin:0; font-size:12px; line-height:1.5; color:#0f172a; background:#eef2ff; padding:8px 12px; border-radius:4px; border-left:3px solid #6366f1;">{why_text}</p>
-          {action_html}
-          {opener_html}
+        <tr><td style="padding:0 24px;">
+          <table cellpadding="0" cellspacing="0" width="100%" style="margin:14px 0; border:1px solid #e2e8f0; border-radius:8px; border-left:4px solid {card_border}; background:{card_bg};">
+            <tr><td style="padding:18px 20px;">
+
+              <!-- Company · Tag · Date + Urgency -->
+              <table cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td>
+                    <span style="font-size:13px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; font-weight:700;">{company}</span>
+                    <span style="display:inline; margin-left:6px; padding:1px 8px; border-radius:100px; background:{colors['bg']}; color:{colors['fg']}; font-size:11px; font-weight:700;">{tag}</span>{date_html}
+                  </td>
+                  <td style="text-align:right;">{badge_html}</td>
+                </tr>
+              </table>
+
+              <!-- Headline -->
+              <p style="margin:10px 0 0; font-size:15px; font-weight:700; line-height:1.4; color:#0f172a;">{headline}</p>
+
+              <!-- Why this matters -->
+              <p style="margin:10px 0 0; font-size:13px; line-height:1.6; color:#475569;">{why_block}</p>
+
+              <!-- Scoop recommends -->
+              {recommend_html}
+
+              <!-- Sources -->
+              {source_html}
+
+            </td></tr>
+          </table>
         </td></tr>"""
 
     company_count = len(user.get("companies", []))
     user_name = html_escape(user["email"].split("@")[0].title())
+    risk_count = sum(1 for i in items if i.get("risk_or_opportunity", "") in ("risk", "both"))
 
     return f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0; padding:0; background:#f8fafc; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;">
+<body style="margin:0; padding:0; background:#f4f4f5; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;">
 <tr><td align="center" style="padding:24px 12px;">
-<table width="560" cellpadding="0" cellspacing="0" style="background:#fff; border-radius:10px; overflow:hidden;">
-  <tr><td style="padding:16px 24px; border-bottom:1px solid #f1f5f9; background:#f8fafc;">
-    <span style="font-size:14px; font-weight:700; color:#0f172a;">🐶🗞️ Your Scoop</span>
-    <span style="font-size:12px; color:#94a3b8; float:right;">{today.strftime('%b %d, %Y')}</span>
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+
+  <!-- Header -->
+  <tr><td style="padding:20px 24px; background:#0f172a;">
+    <table cellpadding="0" cellspacing="0" width="100%">
+      <tr>
+        <td><span style="font-size:20px; vertical-align:middle;">&#128054;&#128240;</span> <span style="font-size:18px; font-weight:700; color:#ffffff; vertical-align:middle;">Scoop</span> <span style="font-size:14px; color:#94a3b8; vertical-align:middle;">Weekly Intel</span></td>
+        <td style="text-align:right;"><span style="font-size:13px; color:#94a3b8;">{today.strftime('%b %d, %Y')}</span></td>
+      </tr>
+    </table>
   </td></tr>
-  <tr><td style="padding:16px 24px 8px;">
-    <p style="margin:0; font-size:13px; color:#475569;">Hi {user_name}, {len(items)} signals this week. Reply to ask follow-up questions.</p>
+
+  <!-- Greeting -->
+  <tr><td style="padding:20px 24px 8px;">
+    <p style="margin:0; font-size:14px; color:#475569;">Hi {user_name}, {len(items)} signal{"s" if len(items) != 1 else ""} across {company_count} account{"s" if company_count != 1 else ""} this week.{f" {risk_count} need attention." if risk_count else ""}</p>
   </td></tr>
+
+  <!-- Signals -->
   {items_html}
-  <tr><td style="padding:12px 24px; background:#f8fafc; border-top:1px solid #f1f5f9; text-align:center;">
-    <p style="margin:0; font-size:11px; color:#94a3b8;">Tracking {company_count} accounts · Next: {next_monday.strftime('%b %d')} · Reply "stop" to unsubscribe</p>
+
+  <!-- Footer -->
+  <tr><td style="padding:16px 24px; background:#f8fafc; border-top:1px solid #e2e8f0;">
+    <table cellpadding="0" cellspacing="0" width="100%">
+      <tr>
+        <td style="font-size:12px; color:#94a3b8;">Next digest: {next_monday.strftime('%b %d')}</td>
+        <td style="text-align:right; font-size:12px; color:#94a3b8;">Tracking {company_count} accounts</td>
+      </tr>
+    </table>
+    <p style="margin:8px 0 0; font-size:11px; color:#cbd5e1; text-align:center;">Reply &ldquo;stop&rdquo; to unsubscribe &middot; Powered by Scoop</p>
   </td></tr>
+
 </table>
 </td></tr></table>
 </body></html>"""

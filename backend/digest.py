@@ -156,20 +156,21 @@ Respond in this exact JSON format (no markdown, no code fences):
 QUERY_TYPES: list[dict[str, str]] = [
     {
         "name": "people_moves",
-        "prompt": """Find recent role changes, appointments, departures, or promotions
-at {company} in the last 30 days. Focus on people in roles relevant to buying {product_category}:
+        "prompt": """Find role changes, appointments, departures, or promotions
+at {company} in the LAST 7 DAYS ONLY. Focus on people in roles relevant to buying {product_category}:
 - Roles like: {buyer_personas}
 - Any leadership change at the VP, Director, or Head-of level in departments that would buy {product_category}
 - New hires into senior roles in relevant departments
 
 Include the person's NAME, their new TITLE, and where they came from if known.
 Skip roles that have no connection to buying {product_category}.
+IMPORTANT: Only include events from the last 7 days. Skip anything older.
 If no relevant people moves found, say so clearly.""",
     },
     {
         "name": "business_initiatives",
-        "prompt": """Find recent initiatives, programs, or strategic projects at {company}
-in the last 30 days that would be relevant to someone selling {product_category}.
+        "prompt": """Find initiatives, programs, or strategic projects at {company}
+in the LAST 14 DAYS ONLY that would be relevant to someone selling {product_category}.
 
 Look for:
 - Programs related to: {use_cases}
@@ -179,11 +180,12 @@ Look for:
 - Anything matching these buying triggers: {buying_triggers}
 
 Include specific details: project scope, budget if mentioned, timeline.
+IMPORTANT: Only include events from the last 14 days. Skip anything older.
 If nothing found, say so clearly.""",
     },
     {
         "name": "hiring_velocity",
-        "prompt": """Analyze the HIRING PATTERNS at {company}. Not just individual job postings, but the VOLUME and VELOCITY of hiring.
+        "prompt": """Analyze the HIRING PATTERNS at {company} over the LAST 14 DAYS. Not just individual job postings, but the VOLUME and VELOCITY of hiring.
 Look for:
 - Total number of open roles relevant to buying {product_category}
 - CLUSTERS of similar roles (e.g., "12 data engineers posted in 2 weeks" = building something big)
@@ -196,23 +198,25 @@ The insight we need is: WHAT IS {company} BUILDING and HOW FAST?
 
 A single job posting is noise. A pattern of 10+ related postings in the same month is a signal.
 Also note: hiring freezes or sudden job posting removals are RISK signals.
+IMPORTANT: Only include hiring activity from the last 14 days. Skip anything older.
 If nothing found beyond normal hiring activity, say so clearly.""",
     },
     {
         "name": "partnerships_vendors",
-        "prompt": """Find recent partnerships, vendor selections, or strategic relationships
-at {company} in the last 30 days relevant to someone selling {product_category}. Look for:
+        "prompt": """Find partnerships, vendor selections, or strategic relationships
+at {company} in the LAST 14 DAYS ONLY relevant to someone selling {product_category}. Look for:
 - New vendor announcements in areas where {product_category} competes
 - Strategic partnerships that change how {company} operates
 - Competitor deployments (competitors include: {competitors})
 - Industry events or conferences where {company} presented as a buyer
 
 Include specific names and details.
+IMPORTANT: Only include events from the last 14 days. Skip anything older.
 If nothing relevant found, say so clearly.""",
     },
     {
         "name": "financial_events",
-        "prompt": """Find recent financial events and earnings information for {company} in the last 60 days.
+        "prompt": """Find financial events and earnings information for {company} in the LAST 14 DAYS ONLY.
 Look for:
 - Funding rounds (any stage: seed, Series A-F, PE, debt)
 - Revenue growth or decline announcements
@@ -224,11 +228,12 @@ Look for:
 CRITICAL: If you find earnings call language, QUOTE THE EXACT WORDS.
 A CEO saying "we are investing heavily in sales enablement" is 100x more
 valuable than "company had good earnings."
+IMPORTANT: Only include events from the last 14 days. Skip anything older.
 If nothing found, say so clearly.""",
     },
     {
         "name": "risk_signals",
-        "prompt": """Find recent NEGATIVE or WARNING signals at {company} in the last 60 days.
+        "prompt": """Find NEGATIVE or WARNING signals at {company} in the LAST 14 DAYS ONLY.
 This is about protecting existing deals and spotting churn risk.
 Look for:
 - Layoffs, hiring freezes, or headcount reductions
@@ -242,12 +247,13 @@ Look for:
 Be specific about the SCOPE of the negative signal. "Laid off 50 in marketing"
 is very different from "laid off 500 company-wide."
 
+IMPORTANT: Only include events from the last 14 days. Skip anything older.
 If nothing concerning found, explicitly state "No risk signals detected" --
 that itself is useful information for a sales rep.""",
     },
     {
         "name": "competitive_moves",
-        "prompt": """Find recent competitive intelligence relevant to selling {product_category} to {company}.
+        "prompt": """Find competitive intelligence from the LAST 14 DAYS ONLY relevant to selling {product_category} to {company}.
 Look for:
 - Has {company} recently adopted, evaluated, or mentioned any of these competitors: {competitors}?
 - Job postings at {company} that mention competitor product names or related technologies
@@ -259,11 +265,12 @@ Look for:
 IMPORTANT: Also look for signals that {company} is UNHAPPY with their current
 solution. Migration projects, "replacing legacy systems", hiring for skills
 associated with switching platforms -- all gold.
+IMPORTANT: Only include events from the last 14 days. Skip anything older.
 If nothing found, say so clearly.""",
     },
     {
         "name": "regulatory_compliance",
-        "prompt": """Find recent regulatory, compliance, or industry mandate changes that would affect {company} and create urgency to buy {product_category}.
+        "prompt": """Find regulatory, compliance, or industry mandate changes from the LAST 14 DAYS ONLY that would affect {company} and create urgency to buy {product_category}.
 Look for:
 - New regulations in {company}'s industry
 - Compliance deadlines approaching in the next 6 months
@@ -275,6 +282,7 @@ Look for:
 
 For each regulation found, note the DEADLINE (when must they comply?)
 and the PENALTY for non-compliance.
+IMPORTANT: Only include events from the last 14 days. Skip anything older.
 If nothing relevant found, say so clearly.""",
     },
 ]
@@ -291,6 +299,7 @@ Return this exact format (no markdown, no code fences):
     "company": "{company}",
     "tag": "<one of: {all_tags}>",
     "headline": "<one specific sentence with names, dates, and concrete details>",
+    "date": "<the date of the event if known, e.g. 'Apr 7' or 'Apr 3, 2026'. Leave empty if unknown>",
     "why": "<one sentence connecting this to selling {product}, referencing which buyer persona would care and why this changes the deal dynamic>",
     "urgency": "<one of: IMMEDIATE, THIS_WEEK, THIS_MONTH, THIS_QUARTER>",
     "window": "<Why this timing matters. e.g., 'New CTO has 90 days to audit the stack.' or 'Compliance deadline is June 30.'>",
@@ -307,7 +316,8 @@ RULES:
 - The "window" must explain WHY timing matters and WHEN it closes.
 - If a signal is a RISK (layoffs, reorg, competitor adoption), mark it clearly.
 - Confidence HIGH = you found a named source. MEDIUM = pattern inference. LOW = speculation.
-- Return an empty array [] if nothing concrete was found. Never invent signals."""
+- Return an empty array [] if nothing concrete was found. Never invent signals.
+- NEVER use em dashes in any field. Use periods or commas instead."""
 
 
 async def _run_company_query(
@@ -401,7 +411,7 @@ async def _rank_signals(
     product: str,
     seller_context: dict,
 ) -> list[dict]:
-    if len(items) <= 3:
+    if len(items) <= 5:
         return items
 
     buyer_personas = seller_context.get("buyer_personas", "decision-makers")
@@ -423,21 +433,27 @@ async def _rank_signals(
 
     data = await _pplx_query(
         system="You are a B2B sales prioritization expert. Return only valid JSON.",
-        prompt=f"""You are ranking sales intelligence signals by urgency and impact.
-
-Given these signals for a salesperson who sells {product}:
+        prompt=f"""You are ranking sales intelligence signals for a salesperson who sells {product}.
 Their buyers are: {buyer_personas}
+
+CRITICAL FILTER — remove signals that are:
+- Generic industry news with NO connection to buying {product} (e.g. "Apple released a new iPhone" is useless to someone selling enterprise middleware)
+- Older than 2 weeks
+- Vague or unverifiable (no names, dates, or sources)
+- About the target company's consumer products/services unless it directly creates a buying trigger for {product}
+
+Only keep signals that create a CONCRETE sales opportunity or RISK to an existing deal.
 
 {signals_json}
 
-Rank them from most to least urgent/impactful. The ranking criteria:
+Ranking criteria (in order):
 1. RISK signals (protecting existing revenue) always rank above opportunities
 2. IMMEDIATE urgency ranks above THIS_WEEK, etc.
 3. Signals with HIGH confidence rank above MEDIUM and LOW
 4. Signals that affect the PRIMARY buyer persona rank above secondary
 5. Signals where the "window" is closing soonest rank highest
 
-Return a JSON array of the indices (the "i" field) of the top 5 signals, in priority order:
+Return a JSON array of the indices (the "i" field) of the top 10 signals, in priority order:
 [0, 3, 7, ...]""",
         max_tokens=200,
     )
@@ -454,11 +470,90 @@ Return a JSON array of the indices (the "i" field) of the top 5 signals, in prio
                     if key not in seen:
                         seen.add(key)
                         ranked.append(items[idx])
-            return ranked[:5] if ranked else items[:5]
+            return ranked[:10] if ranked else items[:10]
     except (json.JSONDecodeError, ValueError):
         pass
 
-    return items[:5]
+    return items[:10]
+
+
+# ── Dedup via LiteLLM ───────────────────────
+
+LITELLM_URL = os.getenv("LITELLM_URL", "")
+LITELLM_KEY = os.getenv("LITELLM_KEY", "")
+LITELLM_MODEL = os.getenv("LITELLM_MODEL", "azure-gpt-4o-mini")
+
+
+async def _dedup_signals(
+    items: list[dict],
+    user_id: str,
+) -> list[dict]:
+    """Remove signals that cover the same story as last week's digest."""
+    if not LITELLM_URL or not LITELLM_KEY or not items:
+        return items
+
+    from db import get_last_digest
+
+    previous = await get_last_digest(user_id)
+    if not previous:
+        return items
+
+    prev_headlines = [
+        f"{p.get('company', '')}: {p.get('headline', '')}" for p in previous
+    ]
+    new_headlines = [
+        {"i": i, "company": item["company"], "headline": item["headline"]}
+        for i, item in enumerate(items)
+    ]
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{LITELLM_URL}/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {LITELLM_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": LITELLM_MODEL,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You deduplicate news signals. Return only valid JSON.",
+                        },
+                        {
+                            "role": "user",
+                            "content": f"""PREVIOUS WEEK's headlines (already sent):
+{json.dumps(prev_headlines, indent=2)}
+
+THIS WEEK's new signals:
+{json.dumps(new_headlines, indent=2)}
+
+Remove any new signal that covers the SAME story or event as a previous headline.
+Same event reported by different sources = duplicate. Remove it.
+A follow-up development on the same story = NOT a duplicate. Keep it.
+
+Return a JSON array of the "i" indices to KEEP:
+[0, 2, 5, ...]""",
+                        },
+                    ],
+                    "max_tokens": 200,
+                    "temperature": 0,
+                },
+            )
+            resp.raise_for_status()
+
+        content = resp.json()["choices"][0]["message"]["content"]
+        keep_indices = _parse_json(content)
+        if isinstance(keep_indices, list):
+            kept = [items[i] for i in keep_indices if isinstance(i, int) and 0 <= i < len(items)]
+            if kept:
+                logger.info("  [dedup] %d → %d signals (removed %d duplicates)", len(items), len(kept), len(items) - len(kept))
+                return kept
+    except Exception:
+        logger.warning("  [dedup] LiteLLM call failed, skipping dedup", exc_info=True)
+
+    return items
 
 
 # ── Public API ───────────────────────────────
@@ -466,6 +561,7 @@ Return a JSON array of the indices (the "i" field) of the top 5 signals, in prio
 async def generate_digest_preview(
     companies: list[str],
     product: str,
+    user_id: str | None = None,
 ) -> list[dict]:
     """Generate digest items with deep multi-query research."""
     # Pass 1: understand the seller
@@ -497,10 +593,15 @@ async def generate_digest_preview(
 
     logger.info("  [ranking] %d raw signals", len(all_items))
 
-    # Pass 3: rank and deduplicate
+    # Pass 3: rank and filter by relevance
     ranked = await _rank_signals(all_items, product, seller_context)
-    logger.info("  [done] %d final signals", len(ranked))
+    logger.info("  [ranked] %d signals after ranking", len(ranked))
 
+    # Pass 4: dedup against last week's digest
+    if user_id:
+        ranked = await _dedup_signals(ranked, user_id)
+
+    logger.info("  [done] %d final signals", len(ranked))
     return ranked
 
 
@@ -510,4 +611,4 @@ async def generate_digest_for_user(user: dict) -> list[dict]:
     if not companies:
         return []
     product = user.get("product", "our product")
-    return await generate_digest_preview(companies, product)
+    return await generate_digest_preview(companies, product, user_id=user.get("id"))

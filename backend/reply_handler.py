@@ -23,6 +23,7 @@ import os
 from datetime import datetime, timedelta
 from email.header import decode_header
 from email.message import Message
+from html import escape as html_escape
 from pathlib import Path
 
 import sys
@@ -173,7 +174,7 @@ Context from the original digest:
 Answer their question with specific, actionable intelligence.
 Include names, titles, dates, and sources where possible.
 Keep the response concise (3-5 paragraphs max).
-Write in a warm but professional tone. Sign off as "— Scoop 🐶🗞️".""",
+Write in a warm but professional tone. Sign off as "Scoop 🐶🗞️".""",
                         },
                         {"role": "user", "content": question},
                     ],
@@ -284,7 +285,7 @@ async def process_replies() -> int:
         if not subject.lower().startswith("re:"):
             subject = f"Re: {subject}"
 
-        html_answer = answer.replace("\n", "<br>")
+        html_answer = html_escape(answer).replace("\n", "<br>")
         html = f"""<div style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:15px; line-height:1.6; color:#0f172a;">
 {html_answer}
 </div>"""
