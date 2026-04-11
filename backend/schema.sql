@@ -56,7 +56,43 @@ create index if not exists idx_auth_tokens_token on auth_tokens(token);
 create index if not exists idx_auth_tokens_email on auth_tokens(email);
 create index if not exists idx_users_email on users(email);
 
--- Row-level security (enable after setting up auth)
--- alter table users enable row level security;
--- alter table companies enable row level security;
--- alter table digests enable row level security;
+-- ── Row-Level Security ────────────────────────────────
+
+alter table users enable row level security;
+alter table companies enable row level security;
+alter table digests enable row level security;
+alter table auth_tokens enable row level security;
+alter table reply_threads enable row level security;
+
+-- Users: can read/update only their own row
+create policy "Users can read own row"
+  on users for select
+  using (id = auth.uid());
+
+create policy "Users can update own row"
+  on users for update
+  using (id = auth.uid());
+
+-- Companies: scoped to the owning user
+create policy "Users can read own companies"
+  on companies for select
+  using (user_id = auth.uid());
+
+create policy "Users can insert own companies"
+  on companies for insert
+  with check (user_id = auth.uid());
+
+create policy "Users can delete own companies"
+  on companies for delete
+  using (user_id = auth.uid());
+
+-- Digests: read-only access to own history
+create policy "Users can read own digests"
+  on digests for select
+  using (user_id = auth.uid());
+
+-- Auth tokens: service-role only (no public access)
+-- No policies = deny all for anon/authenticated roles.
+
+-- Reply threads: service-role only (no public access)
+-- No policies = deny all for anon/authenticated roles.
