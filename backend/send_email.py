@@ -23,6 +23,7 @@ import smtplib
 from datetime import date, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape as html_escape
 
 from exceptions import EmailError
 
@@ -69,7 +70,7 @@ async def send_welcome_email(email: str) -> None:
         logger.info("  [dry-run] Would send welcome to %s", email)
         return
 
-    name = email.split("@")[0].title()
+    name = html_escape(email.split("@")[0].title())
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
 <body style="margin:0; padding:0; background:#f8fafc; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;">
@@ -115,37 +116,42 @@ def render_digest(user: dict, items: list[dict]) -> str:
         colors = tag_colors.get(item.get("tag_color", "blue"), tag_colors["blue"])
         is_risk = item.get("risk_or_opportunity", "") in ("risk", "both")
 
+        # Escape all user/API-sourced strings before embedding in HTML
+        tag = html_escape(item.get("tag", ""))
+        company = html_escape(item.get("company", ""))
+        headline = html_escape(item.get("headline", ""))
+
         # Compact tag line: [Tag] [RISK] Company
         risk_badge = ' <span style="font-size:10px; font-weight:700; color:#dc2626;">⚠ RISK</span>' if is_risk else ""
 
         # Why + window merged into one short block
-        why_text = item.get("why", "")
-        window = item.get("window", "")
+        why_text = html_escape(item.get("why", ""))
+        window = html_escape(item.get("window", ""))
         if window:
             why_text += f" <em style='color:#64748b;'>({window})</em>"
 
         # Action line
         action_html = ""
         if item.get("suggested_action"):
-            action_html = f'<p style="margin:6px 0 0; font-size:12px; color:#6366f1; font-weight:600;">→ {item["suggested_action"]}</p>'
+            action_html = f'<p style="margin:6px 0 0; font-size:12px; color:#6366f1; font-weight:600;">→ {html_escape(item["suggested_action"])}</p>'
 
         # Opening line
         opener_html = ""
         if item.get("opening_line"):
-            opener_html = f'<p style="margin:6px 0 0; font-size:12px; color:#64748b;">💬 <em>"{item["opening_line"]}"</em></p>'
+            opener_html = f'<p style="margin:6px 0 0; font-size:12px; color:#64748b;">💬 <em>"{html_escape(item["opening_line"])}"</em></p>'
 
         items_html += f"""
         <tr><td style="padding:16px 24px; border-bottom:1px solid #f1f5f9;">
-          <p style="margin:0 0 4px; font-size:11px;"><span style="display:inline; font-weight:600; padding:2px 6px; border-radius:100px; background:{colors['bg']}; color:{colors['fg']}; text-transform:uppercase; letter-spacing:0.04em;">{item['tag']}</span>{risk_badge}</p>
-          <p style="margin:0 0 6px; font-size:14px; font-weight:700; color:#0f172a;">{item['company']}</p>
-          <p style="margin:0 0 8px; font-size:13px; line-height:1.5; color:#475569;">{item['headline']}</p>
+          <p style="margin:0 0 4px; font-size:11px;"><span style="display:inline; font-weight:600; padding:2px 6px; border-radius:100px; background:{colors['bg']}; color:{colors['fg']}; text-transform:uppercase; letter-spacing:0.04em;">{tag}</span>{risk_badge}</p>
+          <p style="margin:0 0 6px; font-size:14px; font-weight:700; color:#0f172a;">{company}</p>
+          <p style="margin:0 0 8px; font-size:13px; line-height:1.5; color:#475569;">{headline}</p>
           <p style="margin:0; font-size:12px; line-height:1.5; color:#0f172a; background:#eef2ff; padding:8px 12px; border-radius:4px; border-left:3px solid #6366f1;">{why_text}</p>
           {action_html}
           {opener_html}
         </td></tr>"""
 
     company_count = len(user.get("companies", []))
-    user_name = user["email"].split("@")[0].title()
+    user_name = html_escape(user["email"].split("@")[0].title())
 
     return f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0; padding:0; background:#f8fafc; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
