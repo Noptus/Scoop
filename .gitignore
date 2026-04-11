@@ -26,5 +26,9 @@ node_modules/
 # Runtime state
 .reply_threads.json
 
+# Internal docs (not for public repo)
+brief.md
+outreach/
+
 # Logs
 *.log
