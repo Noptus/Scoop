@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
@@ -124,7 +125,9 @@ async def subscribe(req: SubscribeRequest) -> dict[str, str]:
 async def run_digest(req: DigestRequest) -> dict[str, str | int]:
     """Run the weekly digest pipeline. Called by GitHub Actions cron."""
     expected = os.getenv("CRON_SECRET", "")
-    if not expected or req.api_secret != expected:
+    if not expected:
+        raise HTTPException(500, "CRON_SECRET is not configured")
+    if not secrets.compare_digest(req.api_secret, expected):
         raise HTTPException(403, "Invalid API secret")
 
     from db import get_all_users, get_user_by_email
