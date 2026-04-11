@@ -30,6 +30,7 @@ node_modules/
 # Internal docs (not for public repo)
 brief.md
 outreach/
+ai-core.md
 
 # Logs
 *.log
