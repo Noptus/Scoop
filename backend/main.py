@@ -9,6 +9,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import secrets
@@ -16,9 +17,9 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, EmailStr
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -133,7 +134,11 @@ async def health() -> dict[str, str]:
 
 @app.post("/api/subscribe")
 @limiter.limit("5/minute")
-async def subscribe(request: Request, req: SubscribeRequest) -> dict[str, str]:
+async def subscribe(
+    request: Request,
+    req: SubscribeRequest,
+    background_tasks: BackgroundTasks,
+) -> dict[str, str]:
     """Sign up a new user from the landing page."""
     product, companies = _validate_subscribe(req)
 
@@ -150,6 +155,10 @@ async def subscribe(request: Request, req: SubscribeRequest) -> dict[str, str]:
 
     await send_welcome_email(req.email)
 
+    # Generate a preview signal for the first account in the background
+    if companies:
+        background_tasks.add_task(_send_preview, req.email, product, companies[0])
+
     return {"status": "ok"}
 
 
@@ -163,7 +172,7 @@ async def run_digest(request: Request, req: DigestRequest) -> dict[str, str | in
     if not secrets.compare_digest(req.api_secret, expected):
         raise HTTPException(403, "Invalid API secret")
 
-    from db import get_all_users, get_user_by_email
+    from db import get_all_users, get_user_by_email, save_digest
     from digest import generate_digest_for_user
     from send_email import send_digest_email
 
@@ -178,6 +187,69 @@ async def run_digest(request: Request, req: DigestRequest) -> dict[str, str | in
         items = await generate_digest_for_user(user)
         if items:
             await send_digest_email(user, items)
+            await save_digest(user["id"], items)
             sent += 1
 
     return {"status": "ok", "processed": sent}
+
+
+# ── Unsubscribe ─────────────────────────────
+
+@app.get("/api/unsubscribe")
+async def unsubscribe(email: str, token: str) -> HTMLResponse:
+    """One-click unsubscribe via signed link."""
+    from urls import unsubscribe_token
+
+    expected = unsubscribe_token(email)
+    if not hmac.compare_digest(token, expected):
+        raise HTTPException(403, "Invalid unsubscribe link")
+
+    from db import delete_user
+
+    await delete_user(email)
+    return HTMLResponse(
+        '<html><body style="font-family:sans-serif;text-align:center;padding:80px;">'
+        "<h2>You've been unsubscribed</h2>"
+        "<p>You won't receive any more emails from Scoop.</p>"
+        "</body></html>"
+    )
+
+
+# ── Open tracking ───────────────────────────
+
+PIXEL_GIF = (
+    b"GIF89a\x01\x00\x01\x00\x80\x00\x00"
+    b"\xff\xff\xff\x00\x00\x00!\xf9\x04"
+    b"\x00\x00\x00\x00\x00,\x00\x00\x00"
+    b"\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
+)
+
+
+@app.get("/api/track/open")
+async def track_open(uid: str = "") -> Response:
+    """1x1 tracking pixel. Logs the open, returns a transparent GIF."""
+    if uid:
+        logger.info("Email opened: %s", uid)
+    return Response(
+        content=PIXEL_GIF,
+        media_type="image/gif",
+        headers={"Cache-Control": "no-store, no-cache"},
+    )
+
+
+# ── Welcome preview (background) ────────────
+
+async def _send_preview(email: str, product: str, company: str) -> None:
+    """Background task: generate one signal and send a preview email."""
+    try:
+        from db import get_user_by_email
+        from digest import generate_digest_preview
+        from send_email import send_preview_email
+
+        items = await generate_digest_preview([company], product)
+        if items:
+            user = await get_user_by_email(email)
+            if user:
+                await send_preview_email(user, items[:1])
+    except Exception:
+        logger.exception("Failed to send preview to %s", email)

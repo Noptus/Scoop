@@ -107,6 +107,23 @@ async def create_user(email: str, product: str, companies: list[str]) -> dict:
         raise DatabaseError(f"Failed to create user {email}: {exc}") from exc
 
 
+async def delete_user(email: str) -> bool:
+    """Delete a user and their data (cascade). Returns True if deleted."""
+    if not SUPABASE_URL:
+        return False
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.delete(
+                _url("users"),
+                headers=_headers(),
+                params={"email": f"eq.{email}"},
+            )
+            resp.raise_for_status()
+            return True
+    except httpx.HTTPStatusError as exc:
+        raise DatabaseError(f"Failed to delete user {email}: {exc}") from exc
+
+
 # ── Digests ───────────────────────────────────
 
 async def get_last_digest(user_id: str) -> list[dict]:

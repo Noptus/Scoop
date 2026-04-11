@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 async def main(email: str | None = None) -> None:
-    from db import get_all_users, get_user_by_email
+    from db import get_all_users, get_user_by_email, save_digest
     from digest import generate_digest_for_user
     from send_email import send_digest_email
 
@@ -47,6 +47,7 @@ async def main(email: str | None = None) -> None:
             items = await generate_digest_for_user(user)
             if items:
                 await send_digest_email(user, items)
+                await save_digest(user["id"], items)
                 logger.info("  Sent digest to %s (%d items)", user["email"], len(items))
             else:
                 logger.info("  No signals found for %s", user["email"])

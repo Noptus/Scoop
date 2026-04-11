@@ -75,35 +75,53 @@ _SELLER_CONTEXT_REQUIRED_KEYS = frozenset({
 
 # ── Perplexity helpers ───────────────────────
 
+MAX_RETRIES = 3
+
+
 async def _pplx_query(system: str, prompt: str, max_tokens: int = 700) -> dict:
     api_key = os.getenv("PPLX_KEY")
     if not api_key:
         raise ConfigError("PPLX_KEY not set")
 
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                PPLX_API_URL,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": PPLX_MODEL,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "max_tokens": max_tokens,
-                    "temperature": 0.1,
-                },
-            )
-            resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise APIError(f"Perplexity API returned {exc.response.status_code}") from exc
-    except httpx.RequestError as exc:
-        raise APIError(f"Perplexity API request failed: {exc}") from exc
-    return resp.json()
+    last_exc: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    PPLX_API_URL,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": PPLX_MODEL,
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": max_tokens,
+                        "temperature": 0.1,
+                    },
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPStatusError as exc:
+            last_exc = exc
+            if exc.response.status_code == 429 and attempt < MAX_RETRIES - 1:
+                wait = 2 ** attempt
+                logger.warning("Perplexity 429, retrying in %ds (attempt %d/%d)", wait, attempt + 1, MAX_RETRIES)
+                await asyncio.sleep(wait)
+                continue
+            raise APIError(f"Perplexity API returned {exc.response.status_code}") from exc
+        except httpx.RequestError as exc:
+            last_exc = exc
+            if attempt < MAX_RETRIES - 1:
+                wait = 2 ** attempt
+                logger.warning("Perplexity request error, retrying in %ds: %s", wait, exc)
+                await asyncio.sleep(wait)
+                continue
+            raise APIError(f"Perplexity API request failed: {exc}") from exc
+    raise APIError(f"Perplexity API failed after {MAX_RETRIES} retries") from last_exc
 
 
 def _parse_json(content: str) -> dict | list:

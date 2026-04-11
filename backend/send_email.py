@@ -247,13 +247,23 @@ def render_digest(user: dict, items: list[dict]) -> str:
 
     company_count = len(user.get("companies", []))
     user_name = html_escape(user["email"].split("@")[0].title())
+    user_email = user["email"]
     risk_count = sum(1 for i in items if i.get("risk_or_opportunity", "") in ("risk", "both"))
+
+    # Unsubscribe + tracking URLs
+    from urls import build_unsubscribe_url, build_tracking_url
+    unsub_url = html_escape(build_unsubscribe_url(user_email))
+    track_url = html_escape(build_tracking_url(user.get("id", "")))
+
+    # Forward mailto
+    fwd_subject = html_escape(f"Check out Scoop - account intelligence for sales")
+    fwd_body = html_escape("I've been using Scoop to get weekly signals on my accounts. Free to try: https://noptus.github.io/Scoop/")
 
     return f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0; padding:0; background:#f4f4f5; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;">
 <tr><td align="center" style="padding:24px 12px;">
-<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px; background:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
 
   <!-- Header -->
   <tr><td style="padding:20px 24px; background:#0f172a;">
@@ -273,6 +283,14 @@ def render_digest(user: dict, items: list[dict]) -> str:
   <!-- Signals -->
   {items_html}
 
+  <!-- Forward CTA -->
+  <tr><td style="padding:16px 24px;">
+    <p style="margin:0; font-size:13px; color:#64748b; text-align:center;">
+      Know a colleague who'd find this useful?
+      <a href="mailto:?subject={fwd_subject}&amp;body={fwd_body}" style="color:#4f46e5; font-weight:600; text-decoration:none;">Share Scoop</a>
+    </p>
+  </td></tr>
+
   <!-- Footer -->
   <tr><td style="padding:16px 24px; background:#f8fafc; border-top:1px solid #e2e8f0;">
     <table cellpadding="0" cellspacing="0" width="100%">
@@ -281,9 +299,26 @@ def render_digest(user: dict, items: list[dict]) -> str:
         <td style="text-align:right; font-size:12px; color:#94a3b8;">Tracking {company_count} accounts</td>
       </tr>
     </table>
-    <p style="margin:8px 0 0; font-size:11px; color:#cbd5e1; text-align:center;">Reply &ldquo;stop&rdquo; to unsubscribe &middot; Powered by Scoop</p>
+    <p style="margin:8px 0 0; font-size:11px; color:#cbd5e1; text-align:center;">
+      <a href="{unsub_url}" style="color:#cbd5e1; text-decoration:underline;">Unsubscribe</a> &middot; Powered by Scoop
+    </p>
   </td></tr>
 
 </table>
 </td></tr></table>
+<!-- Open tracking -->
+<img src="{track_url}" width="1" height="1" alt="" style="display:none;">
 </body></html>"""
+
+
+async def send_preview_email(user: dict, items: list[dict]) -> None:
+    """Send a preview email with the first signal after signup."""
+    if not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD:
+        logger.info("  [dry-run] Would send preview to %s", user["email"])
+        return
+
+    html = render_digest(user, items)
+    subject = f"Here's your first signal"
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, send_raw_email, user["email"], subject, html)
