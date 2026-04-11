@@ -11,12 +11,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
-import sys
+import logging
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 
 async def main(email: str | None = None) -> None:
@@ -31,23 +37,23 @@ async def main(email: str | None = None) -> None:
         users = await get_all_users()
 
     if not users:
-        print("No users to process.")
+        logger.info("No users to process.")
         return
 
-    print(f"Processing {len(users)} user(s)...")
+    logger.info("Processing %d user(s)...", len(users))
 
     for user in users:
         try:
             items = await generate_digest_for_user(user)
             if items:
                 await send_digest_email(user, items)
-                print(f"  Sent digest to {user['email']} ({len(items)} items)")
+                logger.info("  Sent digest to %s (%d items)", user["email"], len(items))
             else:
-                print(f"  No signals found for {user['email']}")
-        except Exception as e:
-            print(f"  Error processing {user['email']}: {e}", file=sys.stderr)
+                logger.info("  No signals found for %s", user["email"])
+        except Exception:
+            logger.exception("  Error processing %s", user["email"])
 
-    print("Done.")
+    logger.info("Done.")
 
 
 if __name__ == "__main__":

@@ -15,15 +15,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
-from typing import Optional
 
 import httpx
+
+from exceptions import APIError, ConfigError
+
+logger = logging.getLogger(__name__)
 
 PPLX_API_URL = "https://api.perplexity.ai/chat/completions"
 PPLX_MODEL = "sonar-pro"
 
-SIGNAL_CATEGORIES = {
+SIGNAL_CATEGORIES: dict[str, dict[str, str]] = {
     # People
     "leadership_change": {"tag": "People Move", "color": "red"},
     # Initiatives
@@ -57,32 +61,48 @@ SIGNAL_CATEGORIES = {
 
 ALL_TAGS = ", ".join(SIGNAL_CATEGORIES.keys())
 
+_SELLER_CONTEXT_REQUIRED_KEYS = frozenset({
+    "company_summary",
+    "industry",
+    "buyer_personas",
+    "use_cases",
+    "buying_triggers",
+    "competitors",
+    "keywords",
+    "product_category",
+})
+
 
 # ── Perplexity helpers ───────────────────────
 
 async def _pplx_query(system: str, prompt: str, max_tokens: int = 700) -> dict:
     api_key = os.getenv("PPLX_KEY")
     if not api_key:
-        raise RuntimeError("PPLX_KEY not set")
+        raise ConfigError("PPLX_KEY not set")
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            PPLX_API_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": PPLX_MODEL,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-                "max_tokens": max_tokens,
-                "temperature": 0.1,
-            },
-        )
-        resp.raise_for_status()
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                PPLX_API_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": PPLX_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "max_tokens": max_tokens,
+                    "temperature": 0.1,
+                },
+            )
+            resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise APIError(f"Perplexity API returned {exc.response.status_code}") from exc
+    except httpx.RequestError as exc:
+        raise APIError(f"Perplexity API request failed: {exc}") from exc
     return resp.json()
 
 
@@ -91,6 +111,15 @@ def _parse_json(content: str) -> dict | list:
     if content.startswith("```"):
         content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
     return json.loads(content)
+
+
+def _validate_seller_context(ctx: dict) -> dict:
+    """Ensure seller context contains the expected keys, filling defaults for any missing."""
+    for key in _SELLER_CONTEXT_REQUIRED_KEYS:
+        if key not in ctx or not isinstance(ctx[key], str) or not ctx[key].strip():
+            logger.warning("Seller context missing or empty field: %s", key)
+            ctx.setdefault(key, "")
+    return ctx
 
 
 # ── Pass 1: Deep seller research ─────────────
@@ -118,12 +147,13 @@ Respond in this exact JSON format (no markdown, no code fences):
         max_tokens=700,
     )
     content = data["choices"][0]["message"]["content"]
-    return _parse_json(content)
+    parsed: dict = _parse_json(content)
+    return _validate_seller_context(parsed)
 
 
 # ── Pass 2: 8 query types per company ────────
 
-QUERY_TYPES = [
+QUERY_TYPES: list[dict[str, str]] = [
     {
         "name": "people_moves",
         "prompt": """Find recent role changes, appointments, departures, or promotions
@@ -281,7 +311,7 @@ RULES:
 
 
 async def _run_company_query(
-    query_type: dict,
+    query_type: dict[str, str],
     company: str,
     product: str,
     seller_context: dict,
@@ -331,7 +361,7 @@ Return only valid JSON.""",
     if not isinstance(items, list):
         items = [items] if isinstance(items, dict) and items.get("headline") else []
 
-    sources = data.get("citations", [])
+    sources: list = data.get("citations", [])
     for item in items:
         item["sources"] = sources
 
@@ -350,16 +380,16 @@ async def _research_company(
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    all_items = []
+    all_items: list[dict] = []
     for query_type, result in zip(QUERY_TYPES, results):
         if isinstance(result, Exception):
-            print(f"    [{query_type['name']}] Error: {result}")
+            logger.error("    [%s] Error: %s", query_type["name"], result)
             continue
         if result:
-            print(f"    [{query_type['name']}] {len(result)} signal(s)")
+            logger.info("    [%s] %d signal(s)", query_type["name"], len(result))
             all_items.extend(result)
         else:
-            print(f"    [{query_type['name']}] nothing found")
+            logger.info("    [%s] nothing found", query_type["name"])
 
     return all_items
 
@@ -416,8 +446,8 @@ Return a JSON array of the indices (the "i" field) of the top 5 signals, in prio
     try:
         indices = _parse_json(content)
         if isinstance(indices, list):
-            ranked = []
-            seen = set()
+            ranked: list[dict] = []
+            seen: set[str] = set()
             for idx in indices:
                 if isinstance(idx, int) and 0 <= idx < len(items):
                     key = items[idx]["headline"][:60]
@@ -439,20 +469,20 @@ async def generate_digest_preview(
 ) -> list[dict]:
     """Generate digest items with deep multi-query research."""
     # Pass 1: understand the seller
-    print("  [seller research]")
+    logger.info("  [seller research]")
     seller_context = await research_seller(product)
-    print(f"    Summary: {seller_context.get('company_summary', '')[:120]}")
-    print(f"    Category: {seller_context.get('product_category', '')}")
-    print(f"    Buyers: {seller_context.get('buyer_personas', '')[:120]}")
-    print(f"    Triggers: {seller_context.get('buying_triggers', '')[:120]}")
-    print(f"    Deal killers: {seller_context.get('deal_killers', '')[:120]}")
-    print(f"    Urgency: {seller_context.get('urgency_drivers', '')[:120]}")
-    print(f"    Competitors: {seller_context.get('competitors', '')[:120]}")
+    logger.info("    Summary: %s", seller_context.get("company_summary", "")[:120])
+    logger.info("    Category: %s", seller_context.get("product_category", ""))
+    logger.info("    Buyers: %s", seller_context.get("buyer_personas", "")[:120])
+    logger.info("    Triggers: %s", seller_context.get("buying_triggers", "")[:120])
+    logger.info("    Deal killers: %s", seller_context.get("deal_killers", "")[:120])
+    logger.info("    Urgency: %s", seller_context.get("urgency_drivers", "")[:120])
+    logger.info("    Competitors: %s", seller_context.get("competitors", "")[:120])
 
     # Pass 2: 8 queries per company in parallel
-    all_items = []
+    all_items: list[dict] = []
     for company in companies:
-        print(f"  [{company}] (8 queries)")
+        logger.info("  [%s] (8 queries)", company)
         company_items = await _research_company(company, product, seller_context)
         for item in company_items:
             tag_key = item.get("tag", "strategic")
@@ -462,14 +492,14 @@ async def generate_digest_preview(
         all_items.extend(company_items)
 
     if not all_items:
-        print("  No signals found across any account.")
+        logger.info("  No signals found across any account.")
         return []
 
-    print(f"  [ranking] {len(all_items)} raw signals")
+    logger.info("  [ranking] %d raw signals", len(all_items))
 
     # Pass 3: rank and deduplicate
     ranked = await _rank_signals(all_items, product, seller_context)
-    print(f"  [done] {len(ranked)} final signals")
+    logger.info("  [done] %d final signals", len(ranked))
 
     return ranked
 

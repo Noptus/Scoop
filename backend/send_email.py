@@ -17,11 +17,16 @@ the send_raw_email() function.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import smtplib
 from datetime import date, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+from exceptions import EmailError
+
+logger = logging.getLogger(__name__)
 
 GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS", "")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
@@ -36,15 +41,18 @@ def send_raw_email(to: str, subject: str, html: str) -> None:
     msg["Subject"] = subject
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
-        server.sendmail(GMAIL_ADDRESS, to, msg.as_string())
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+            server.sendmail(GMAIL_ADDRESS, to, msg.as_string())
+    except smtplib.SMTPException as exc:
+        raise EmailError(f"Failed to send email to {to}: {exc}") from exc
 
 
 async def send_digest_email(user: dict, items: list[dict]) -> None:
     """Send a rendered digest email to a user."""
     if not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD:
-        print(f"  [dry-run] Would send {len(items)} items to {user['email']}")
+        logger.info("  [dry-run] Would send %d items to %s", len(items), user["email"])
         return
 
     html = render_digest(user, items)
@@ -58,7 +66,7 @@ async def send_digest_email(user: dict, items: list[dict]) -> None:
 async def send_welcome_email(email: str) -> None:
     """Send a short welcome email after signup."""
     if not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD:
-        print(f"  [dry-run] Would send welcome to {email}")
+        logger.info("  [dry-run] Would send welcome to %s", email)
         return
 
     name = email.split("@")[0].title()
@@ -95,7 +103,7 @@ def render_digest(user: dict, items: list[dict]) -> str:
     today = date.today()
     next_monday = today + timedelta(days=(7 - today.weekday()) % 7 or 7)
 
-    tag_colors = {
+    tag_colors: dict[str, dict[str, str]] = {
         "red": {"bg": "#fef2f2", "fg": "#ef4444"},
         "green": {"bg": "#ecfdf5", "fg": "#10b981"},
         "amber": {"bg": "#fffbeb", "fg": "#f59e0b"},

@@ -18,12 +18,14 @@ import asyncio
 import email
 import email.utils
 import imaplib
-import json
+import logging
 import os
-import sys
 from datetime import datetime, timedelta
 from email.header import decode_header
+from email.message import Message
 from pathlib import Path
+
+import sys
 
 from dotenv import load_dotenv
 
@@ -33,7 +35,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import httpx
 
+from exceptions import APIError, ConfigError, EmailError
 from send_email import send_raw_email
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS", "")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
@@ -48,7 +58,7 @@ MAX_EMAILS_PER_THREAD = 5  # 1 digest + 2 back-and-forths
 # ── Thread tracking via Supabase ─────────────
 # Table: reply_threads (thread_id text PK, user_email text, count int, context text)
 
-def _sb_headers() -> dict:
+def _sb_headers() -> dict[str, str]:
     return {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -83,10 +93,10 @@ async def _upsert_thread(thread_id: str, user_email: str, count: int, context: s
 
 # ── Email parsing helpers ────────────────────
 
-def _decode_subject(msg) -> str:
+def _decode_subject(msg: Message) -> str:
     raw = msg.get("Subject", "")
     parts = decode_header(raw)
-    decoded = []
+    decoded: list[str] = []
     for part, charset in parts:
         if isinstance(part, bytes):
             decoded.append(part.decode(charset or "utf-8", errors="replace"))
@@ -95,7 +105,7 @@ def _decode_subject(msg) -> str:
     return " ".join(decoded)
 
 
-def _get_text_body(msg) -> str:
+def _get_text_body(msg: Message) -> str:
     if msg.is_multipart():
         for part in msg.walk():
             if part.get_content_type() == "text/plain":
@@ -111,7 +121,7 @@ def _get_text_body(msg) -> str:
 
 def _strip_quoted_text(body: str) -> str:
     lines = body.split("\n")
-    clean = []
+    clean: list[str] = []
     for line in lines:
         stripped = line.strip()
         if stripped.startswith(">"):
@@ -126,7 +136,7 @@ def _strip_quoted_text(body: str) -> str:
     return "\n".join(clean).strip()
 
 
-def _get_thread_id(msg) -> str | None:
+def _get_thread_id(msg: Message) -> str | None:
     references = msg.get("References", "").strip()
     in_reply_to = msg.get("In-Reply-To", "").strip()
     if references:
@@ -139,21 +149,22 @@ def _get_thread_id(msg) -> str | None:
 async def _research_question(question: str, context: str) -> str:
     api_key = os.getenv("PPLX_KEY")
     if not api_key:
-        raise RuntimeError("PPLX_KEY not set")
+        raise ConfigError("PPLX_KEY not set")
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            PPLX_API_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": PPLX_MODEL,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": f"""You are Scoop, a B2B sales intelligence assistant.
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                PPLX_API_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": PPLX_MODEL,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": f"""You are Scoop, a B2B sales intelligence assistant.
 You previously sent the user a digest email. They replied with a follow-up question.
 
 Context from the original digest:
@@ -163,19 +174,23 @@ Answer their question with specific, actionable intelligence.
 Include names, titles, dates, and sources where possible.
 Keep the response concise (3-5 paragraphs max).
 Write in a warm but professional tone. Sign off as "— Scoop 🐶🗞️".""",
-                    },
-                    {"role": "user", "content": question},
-                ],
-                "max_tokens": 800,
-                "temperature": 0.2,
-            },
-        )
-        resp.raise_for_status()
+                        },
+                        {"role": "user", "content": question},
+                    ],
+                    "max_tokens": 800,
+                    "temperature": 0.2,
+                },
+            )
+            resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise APIError(f"Perplexity API returned {exc.response.status_code}") from exc
+    except httpx.RequestError as exc:
+        raise APIError(f"Perplexity API request failed: {exc}") from exc
 
     data = resp.json()
-    answer = data["choices"][0]["message"]["content"].strip()
+    answer: str = data["choices"][0]["message"]["content"].strip()
 
-    citations = data.get("citations", [])
+    citations: list = data.get("citations", [])
     if citations:
         answer += "\n\nSources:\n" + "\n".join(f"- {url}" for url in citations[:5])
 
@@ -186,17 +201,21 @@ Write in a warm but professional tone. Sign off as "— Scoop 🐶🗞️".""",
 
 def fetch_replies() -> list[dict]:
     if not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD:
-        print("Gmail credentials not set, skipping.")
+        logger.warning("Gmail credentials not set, skipping.")
         return []
 
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
-    mail.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+    except imaplib.IMAP4.error as exc:
+        raise EmailError(f"Failed to connect to Gmail IMAP: {exc}") from exc
+
     mail.select("INBOX")
 
     since = (datetime.now() - timedelta(days=7)).strftime("%d-%b-%Y")
     _, msg_ids = mail.search(None, f'(UNSEEN SINCE {since})')
 
-    replies = []
+    replies: list[dict] = []
     if not msg_ids[0]:
         mail.logout()
         return []
@@ -238,7 +257,7 @@ def fetch_replies() -> list[dict]:
 async def process_replies() -> int:
     replies = fetch_replies()
     if not replies:
-        print("No new replies.")
+        logger.info("No new replies.")
         return 0
 
     processed = 0
@@ -250,12 +269,16 @@ async def process_replies() -> int:
         context = thread["context"] if thread else ""
 
         if count >= MAX_EMAILS_PER_THREAD:
-            print(f"  Thread with {reply['from']} hit limit, skipping.")
+            logger.info("  Thread with %s hit limit, skipping.", reply["from"])
             continue
 
-        print(f"  Reply from {reply['from']}: {reply['question'][:80]}...")
+        logger.info("  Reply from %s: %s...", reply["from"], reply["question"][:80])
 
-        answer = await _research_question(reply["question"], context)
+        try:
+            answer = await _research_question(reply["question"], context)
+        except APIError:
+            logger.exception("  Failed to research answer for %s", reply["from"])
+            continue
 
         subject = reply["subject"]
         if not subject.lower().startswith("re:"):
@@ -266,8 +289,13 @@ async def process_replies() -> int:
 {html_answer}
 </div>"""
 
-        send_raw_email(reply["from"], subject, html)
-        print(f"  Replied to {reply['from']}")
+        try:
+            send_raw_email(reply["from"], subject, html)
+        except EmailError:
+            logger.exception("  Failed to send reply to %s", reply["from"])
+            continue
+
+        logger.info("  Replied to %s", reply["from"])
 
         new_context = context + f"\nUser asked: {reply['question']}\nScoop answered: {answer[:500]}"
         await _upsert_thread(thread_id, reply["from"], count + 2, new_context)
@@ -276,10 +304,10 @@ async def process_replies() -> int:
     return processed
 
 
-async def main():
-    print(f"Checking replies at {datetime.now().strftime('%H:%M:%S')}...")
+async def main() -> None:
+    logger.info("Checking replies at %s...", datetime.now().strftime("%H:%M:%S"))
     n = await process_replies()
-    print(f"Processed {n} replies.")
+    logger.info("Processed %d replies.", n)
 
 
 if __name__ == "__main__":
