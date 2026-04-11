@@ -196,8 +196,12 @@ async def run_digest(request: Request, req: DigestRequest) -> dict[str, str | in
 # ── Unsubscribe ─────────────────────────────
 
 @app.get("/api/unsubscribe")
-async def unsubscribe(email: str, token: str) -> HTMLResponse:
+@limiter.limit("10/hour")
+async def unsubscribe(request: Request, email: str = "", token: str = "") -> HTMLResponse:
     """One-click unsubscribe via signed link."""
+    if not email or "@" not in email or not token:
+        raise HTTPException(400, "Invalid request")
+
     from urls import unsubscribe_token
 
     expected = unsubscribe_token(email)

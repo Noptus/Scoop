@@ -119,18 +119,15 @@
     })
       .then(function (res) {
         if (!res.ok) {
-          return res.json().then(function (data) {
-            throw new Error(data.message || 'Something went wrong.');
+          return res.text().then(function (text) {
+            try { var data = JSON.parse(text); throw new Error(data.message || 'Something went wrong.'); }
+            catch (e) { if (e instanceof SyntaxError) throw new Error('Something went wrong.'); throw e; }
           });
         }
         return res.json();
       })
-      .then(function (data) {
-        if (data.status === 'exists') {
-          showSuccess();
-        } else {
-          showSuccess();
-        }
+      .then(function () {
+        showSuccess();
       })
       .catch(function (err) {
         setLoading(false);

@@ -55,6 +55,8 @@ async def _get_token() -> str:
             raise ConfigError(f"AI Core token request failed: {resp.status_code} {resp.text[:200]}")
         data = resp.json()
 
+    if "access_token" not in data:
+        raise ConfigError(f"AI Core token response missing access_token: {str(data)[:200]}")
     _token_cache["token"] = data["access_token"]
     _token_cache["expires_at"] = now + 11 * 3600  # 11-hour cache
     logger.info("AI Core token refreshed (expires in 11h)")

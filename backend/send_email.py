@@ -246,8 +246,8 @@ def render_digest(user: dict, items: list[dict]) -> str:
         </td></tr>"""
 
     company_count = len(user.get("companies", []))
-    user_name = html_escape(user["email"].split("@")[0].title())
-    user_email = user["email"]
+    user_email = user.get("email", "")
+    user_name = html_escape(user_email.split("@")[0].title()) if user_email else "there"
     risk_count = sum(1 for i in items if i.get("risk_or_opportunity", "") in ("risk", "both"))
 
     # Unsubscribe + tracking URLs

@@ -44,9 +44,10 @@ jobs:
           SAP_AICORE_RESOURCE_GROUP: ${{ secrets.SAP_AICORE_RESOURCE_GROUP }}
           AICORE_DEPLOYMENT_PPLX: ${{ secrets.AICORE_DEPLOYMENT_PPLX }}
           AICORE_DEPLOYMENT_GPT4O_MINI: ${{ secrets.AICORE_DEPLOYMENT_GPT4O_MINI }}
+          USER_EMAIL: ${{ inputs.user_email }}
         run: |
-          if [ -n "${{ inputs.user_email }}" ]; then
-            python run_digest.py --email "${{ inputs.user_email }}"
+          if [ -n "$USER_EMAIL" ]; then
+            python run_digest.py --email "$USER_EMAIL"
           else
             python run_digest.py
           fi
