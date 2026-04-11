@@ -32,4 +32,10 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SAP_AICORE_AUTH_URL: ${{ secrets.SAP_AICORE_AUTH_URL }}
+          SAP_AICORE_CLIENT_ID: ${{ secrets.SAP_AICORE_CLIENT_ID }}
+          SAP_AICORE_CLIENT_SECRET: ${{ secrets.SAP_AICORE_CLIENT_SECRET }}
+          SAP_AICORE_BASE_URL: ${{ secrets.SAP_AICORE_BASE_URL }}
+          SAP_AICORE_RESOURCE_GROUP: ${{ secrets.SAP_AICORE_RESOURCE_GROUP }}
+          AICORE_DEPLOYMENT_PPLX: ${{ secrets.AICORE_DEPLOYMENT_PPLX }}
         run: python reply_handler.py

@@ -7,9 +7,9 @@
   'use strict';
 
   // ── Config ──────────────────────────────────
-  // Set API_URL to your backend when deployed.
-  // When null, the form simulates success (demo mode).
-  var API_URL = null;
+  // Signup calls Supabase directly via an RPC function (no backend needed).
+  var SUPABASE_URL = 'https://oeihgepuslxpybidrquk.supabase.co';
+  var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9laWhnZXB1c2x4cHliaWRycXVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzA0ODgsImV4cCI6MjA5MTA0NjQ4OH0.--NZjLdQ1nJ4GfvliLIPW9W2guttb0z1uzMa2O_O7g8';
 
   // ── DOM refs ────────────────────────────────
   var nav = document.getElementById('nav');
@@ -104,32 +104,38 @@
     // Start loading
     setLoading(true);
 
-    if (API_URL) {
-      fetch(API_URL + '/api/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: savedEmail,
-          product: productVal,
-          companies: companies
-        }),
+    fetch(SUPABASE_URL + '/rest/v1/rpc/signup', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_KEY
+      },
+      body: JSON.stringify({
+        p_email: savedEmail,
+        p_product: productVal,
+        p_companies: companies
+      }),
+    })
+      .then(function (res) {
+        if (!res.ok) {
+          return res.json().then(function (data) {
+            throw new Error(data.message || 'Something went wrong.');
+          });
+        }
+        return res.json();
       })
-        .then(function (res) {
-          if (!res.ok) {
-            return res.json().then(function (data) {
-              throw new Error(data.detail || 'Something went wrong.');
-            });
-          }
+      .then(function (data) {
+        if (data.status === 'exists') {
           showSuccess();
-        })
-        .catch(function (err) {
-          setLoading(false);
-          showFormError(err.message || 'Network error. Please try again.');
-        });
-    } else {
-      // Demo mode — simulate API delay
-      setTimeout(showSuccess, 1200);
-    }
+        } else {
+          showSuccess();
+        }
+      })
+      .catch(function (err) {
+        setLoading(false);
+        showFormError(err.message || 'Network error. Please try again.');
+      });
   });
 
   // ── Input error clearing on focus ───────────

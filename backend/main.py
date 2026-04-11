@@ -39,8 +39,8 @@ ALLOWED_ORIGINS = os.getenv(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    if not os.getenv("PPLX_KEY"):
-        raise ConfigError("PPLX_KEY environment variable is required")
+    if not os.getenv("PPLX_KEY") and not os.getenv("AICORE_DEPLOYMENT_PPLX"):
+        raise ConfigError("Either PPLX_KEY or AICORE_DEPLOYMENT_PPLX must be set")
     yield
 
 
