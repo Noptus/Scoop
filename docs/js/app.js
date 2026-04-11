@@ -1,12 +1,17 @@
 /* ============================================
    Scoop — Frontend
+   Vanilla JS, zero dependencies
    ============================================ */
 
 (function () {
   'use strict';
 
-  var API_URL = null; // Set to backend URL when deployed
+  // ── Config ──────────────────────────────────
+  // Set API_URL to your backend when deployed.
+  // When null, the form simulates success (demo mode).
+  var API_URL = null;
 
+  // ── DOM refs ────────────────────────────────
   var nav = document.getElementById('nav');
   var heroForm = document.getElementById('hero-form');
   var heroEmail = document.getElementById('hero-email');
@@ -16,82 +21,206 @@
 
   var savedEmail = '';
 
-  // Nav scroll
+  // ── Nav scroll effect ───────────────────────
   window.addEventListener('scroll', function () {
     nav.classList.toggle('nav--scrolled', window.scrollY > 10);
   }, { passive: true });
 
-  // Hero: email + button -> scroll to setup
+  // ── Scroll reveal ───────────────────────────
+  var revealElements = document.querySelectorAll('.reveal');
+  var revealObserver = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-visible');
+        revealObserver.unobserve(entry.target);
+      }
+    });
+  }, {
+    threshold: 0.1,
+    rootMargin: '0px 0px -40px 0px'
+  });
+
+  revealElements.forEach(function (el) {
+    revealObserver.observe(el);
+  });
+
+  // ── Hero form: email -> scroll to setup ─────
   heroForm.addEventListener('submit', function (e) {
     e.preventDefault();
     var email = heroEmail.value.trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+
+    // Remove prior error state
+    heroEmail.classList.remove('hero__input--error');
+
+    if (!email || !isValidEmail(email)) {
+      heroEmail.classList.add('hero__input--error');
       heroEmail.focus();
       return;
     }
+
     savedEmail = email;
-    var target = document.getElementById('setup');
-    window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - 80, behavior: 'smooth' });
+    scrollToSection('setup');
     setTimeout(function () { document.getElementById('product').focus(); }, 600);
   });
 
-  // Setup form: product + accounts -> subscribe
+  // ── Signup form ─────────────────────────────
   signupForm.addEventListener('submit', function (e) {
     e.preventDefault();
     clearErrors();
 
-    var product = document.getElementById('product').value.trim();
-    var customersRaw = document.getElementById('customers').value.trim();
+    var product = document.getElementById('product');
+    var customers = document.getElementById('customers');
+    var productVal = product.value.trim();
+    var customersRaw = customers.value.trim();
 
-    if (!product) { showError('product', 'Tell us what you sell so we can tailor the digest.'); return; }
-    if (!customersRaw) { showError('customers', 'Add at least one company to monitor.'); return; }
+    var hasError = false;
 
-    var companies = customersRaw.split('\n').map(function (s) { return s.trim(); }).filter(Boolean).slice(0, 10);
-    if (!companies.length) { showError('customers', 'Add at least one company to monitor.'); return; }
+    if (!productVal) {
+      showFieldError(product, 'Tell us what you sell so we can tailor the digest.');
+      hasError = true;
+    } else if (productVal.length > 500) {
+      showFieldError(product, 'Keep it under 500 characters.');
+      hasError = true;
+    }
 
-    // Loading
-    btnSubmit.querySelector('.btn__text').hidden = true;
-    btnSubmit.querySelector('.btn__loader').hidden = false;
-    btnSubmit.disabled = true;
+    if (!customersRaw) {
+      showFieldError(customers, 'Add at least one company to monitor.');
+      hasError = true;
+    }
+
+    if (hasError) return;
+
+    var companies = customersRaw
+      .split('\n')
+      .map(function (s) { return s.trim(); })
+      .filter(function (s) { return s.length > 0 && s.length <= 200; })
+      .slice(0, 10);
+
+    if (!companies.length) {
+      showFieldError(customers, 'Add at least one company name (max 200 chars each).');
+      return;
+    }
+
+    // Start loading
+    setLoading(true);
 
     if (API_URL) {
       fetch(API_URL + '/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: savedEmail, product: product, companies: companies }),
+        body: JSON.stringify({
+          email: savedEmail,
+          product: productVal,
+          companies: companies
+        }),
       })
-        .then(function (res) { if (!res.ok) throw new Error(); showSuccess(); })
-        .catch(showSuccess);
+        .then(function (res) {
+          if (!res.ok) {
+            return res.json().then(function (data) {
+              throw new Error(data.detail || 'Something went wrong.');
+            });
+          }
+          showSuccess();
+        })
+        .catch(function (err) {
+          setLoading(false);
+          showFormError(err.message || 'Network error. Please try again.');
+        });
     } else {
+      // Demo mode — simulate API delay
       setTimeout(showSuccess, 1200);
     }
   });
 
+  // ── Input error clearing on focus ───────────
+  signupForm.addEventListener('focusin', function (e) {
+    var field = e.target;
+    if (field.classList.contains('signup-form__input--error')) {
+      field.classList.remove('signup-form__input--error');
+    }
+    if (field.classList.contains('signup-form__textarea--error')) {
+      field.classList.remove('signup-form__textarea--error');
+    }
+    // Remove adjacent error message
+    var next = field.nextElementSibling;
+    if (next && next.classList.contains('signup-form__error')) {
+      next.remove();
+    }
+  });
+
+  // ── Helpers ─────────────────────────────────
+
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  function scrollToSection(id) {
+    var target = document.getElementById(id);
+    if (target) {
+      window.scrollTo({
+        top: target.getBoundingClientRect().top + window.scrollY - 80,
+        behavior: 'smooth'
+      });
+    }
+  }
+
   function showSuccess() {
+    setLoading(false);
     signupForm.hidden = true;
     successEl.hidden = false;
   }
 
-  function showError(fieldId, msg) {
-    var field = document.getElementById(fieldId);
+  function showFieldError(field, msg) {
+    var errorClass = field.tagName === 'TEXTAREA'
+      ? 'signup-form__textarea--error'
+      : 'signup-form__input--error';
+    field.classList.add(errorClass);
+
     var el = document.createElement('div');
     el.className = 'signup-form__error';
+    el.setAttribute('role', 'alert');
     el.textContent = msg;
     field.after(el);
-    field.focus();
+
+    if (!document.querySelector('.' + errorClass + ':first-of-type') || field === document.querySelector('.' + errorClass)) {
+      field.focus();
+    }
+  }
+
+  function showFormError(msg) {
+    var existing = signupForm.querySelector('.signup-form__error--global');
+    if (existing) existing.remove();
+
+    var el = document.createElement('div');
+    el.className = 'signup-form__error signup-form__error--global';
+    el.setAttribute('role', 'alert');
+    el.style.textAlign = 'center';
+    el.style.marginTop = '12px';
+    el.textContent = msg;
+    btnSubmit.after(el);
   }
 
   function clearErrors() {
     signupForm.querySelectorAll('.signup-form__error').forEach(function (el) { el.remove(); });
+    signupForm.querySelectorAll('.signup-form__input--error').forEach(function (el) { el.classList.remove('signup-form__input--error'); });
+    signupForm.querySelectorAll('.signup-form__textarea--error').forEach(function (el) { el.classList.remove('signup-form__textarea--error'); });
   }
 
-  // Smooth scroll
+  function setLoading(loading) {
+    btnSubmit.querySelector('.btn__text').hidden = loading;
+    btnSubmit.querySelector('.btn__loader').hidden = !loading;
+    btnSubmit.disabled = loading;
+  }
+
+  // ── Smooth scroll for anchor links ──────────
   document.querySelectorAll('a[href^="#"]').forEach(function (a) {
     a.addEventListener('click', function (e) {
-      var target = document.querySelector(this.getAttribute('href'));
+      var href = this.getAttribute('href');
+      if (href === '#') return;
+      var target = document.querySelector(href);
       if (target) {
         e.preventDefault();
-        window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - 80, behavior: 'smooth' });
+        scrollToSection(href.slice(1));
       }
     });
   });
