@@ -148,24 +148,11 @@ def _get_thread_id(msg: Message) -> str | None:
 # ── Perplexity research ──────────────────────
 
 async def _research_question(question: str, context: str) -> str:
-    api_key = os.getenv("PPLX_KEY")
-    if not api_key:
-        raise ConfigError("PPLX_KEY not set")
-
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                PPLX_API_URL,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": PPLX_MODEL,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": f"""You are Scoop, a B2B sales intelligence assistant.
+    deployment_id = os.getenv("AICORE_DEPLOYMENT_PPLX", "")
+    messages = [
+        {
+            "role": "system",
+            "content": f"""You are Scoop, a B2B sales intelligence assistant.
 You previously sent the user a digest email. They replied with a follow-up question.
 
 Context from the original digest:
@@ -174,21 +161,34 @@ Context from the original digest:
 Answer their question with specific, actionable intelligence.
 Include names, titles, dates, and sources where possible.
 Keep the response concise (3-5 paragraphs max).
-Write in a warm but professional tone. Sign off as "Scoop 🐶🗞️".""",
-                        },
-                        {"role": "user", "content": question},
-                    ],
-                    "max_tokens": 800,
-                    "temperature": 0.2,
-                },
-            )
-            resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise APIError(f"Perplexity API returned {exc.response.status_code}") from exc
-    except httpx.RequestError as exc:
-        raise APIError(f"Perplexity API request failed: {exc}") from exc
+Write in a warm but professional tone. Sign off as "Scoop".""",
+        },
+        {"role": "user", "content": question},
+    ]
 
-    data = resp.json()
+    if deployment_id:
+        from aicore import chat_completion
+        data = await chat_completion(deployment_id, messages, max_tokens=800, temperature=0.2, model="sonar-pro")
+    else:
+        api_key = os.getenv("PPLX_KEY")
+        if not api_key:
+            raise ConfigError("Neither AICORE_DEPLOYMENT_PPLX nor PPLX_KEY is set")
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    PPLX_API_URL,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={"model": PPLX_MODEL, "messages": messages, "max_tokens": 800, "temperature": 0.2},
+                )
+                resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise APIError(f"Perplexity API returned {exc.response.status_code}") from exc
+        except httpx.RequestError as exc:
+            raise APIError(f"Perplexity API request failed: {exc}") from exc
+        data = resp.json()
     answer: str = data["choices"][0]["message"]["content"].strip()
 
     citations: list = data.get("citations", [])

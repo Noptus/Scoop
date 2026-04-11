@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 PPLX_API_URL = "https://api.perplexity.ai/chat/completions"
 PPLX_MODEL = "sonar-pro"
+AICORE_DEPLOYMENT_PPLX = os.getenv("AICORE_DEPLOYMENT_PPLX", "")
 
 SIGNAL_CATEGORIES: dict[str, dict[str, str]] = {
     # People
@@ -79,32 +80,46 @@ MAX_RETRIES = 3
 
 
 async def _pplx_query(system: str, prompt: str, max_tokens: int = 700) -> dict:
-    api_key = os.getenv("PPLX_KEY")
-    if not api_key:
-        raise ConfigError("PPLX_KEY not set")
+    """Call Perplexity Sonar Pro. Uses SAP AI Core if configured, falls back to direct API."""
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": prompt},
+    ]
 
     last_exc: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.post(
-                    PPLX_API_URL,
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": PPLX_MODEL,
-                        "messages": [
-                            {"role": "system", "content": system},
-                            {"role": "user", "content": prompt},
-                        ],
-                        "max_tokens": max_tokens,
-                        "temperature": 0.1,
-                    },
-                )
-                resp.raise_for_status()
-                return resp.json()
+            if AICORE_DEPLOYMENT_PPLX:
+                from aicore import chat_completion
+                return await chat_completion(AICORE_DEPLOYMENT_PPLX, messages, max_tokens, model="sonar-pro")
+            else:
+                api_key = os.getenv("PPLX_KEY")
+                if not api_key:
+                    raise ConfigError("Neither AICORE_DEPLOYMENT_PPLX nor PPLX_KEY is set")
+                async with httpx.AsyncClient(timeout=60) as client:
+                    resp = await client.post(
+                        PPLX_API_URL,
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": PPLX_MODEL,
+                            "messages": messages,
+                            "max_tokens": max_tokens,
+                            "temperature": 0.1,
+                        },
+                    )
+                    resp.raise_for_status()
+                    return resp.json()
+        except APIError as exc:
+            last_exc = exc
+            if "429" in str(exc) and attempt < MAX_RETRIES - 1:
+                wait = 2 ** attempt
+                logger.warning("Perplexity 429, retrying in %ds (attempt %d/%d)", wait, attempt + 1, MAX_RETRIES)
+                await asyncio.sleep(wait)
+                continue
+            raise
         except httpx.HTTPStatusError as exc:
             last_exc = exc
             if exc.response.status_code == 429 and attempt < MAX_RETRIES - 1:
@@ -495,8 +510,9 @@ Return a JSON array of the indices (the "i" field) of the top 10 signals, in pri
     return items[:10]
 
 
-# ── Dedup via LiteLLM ───────────────────────
+# ── Dedup via AI Core (GPT-4o-mini) or LiteLLM fallback ──
 
+AICORE_DEPLOYMENT_DEDUP = os.getenv("AICORE_DEPLOYMENT_GPT4O_MINI", "")
 LITELLM_URL = os.getenv("LITELLM_URL", "")
 LITELLM_KEY = os.getenv("LITELLM_KEY", "")
 LITELLM_MODEL = os.getenv("LITELLM_MODEL", "azure-gpt-4o-mini")
@@ -507,7 +523,7 @@ async def _dedup_signals(
     user_id: str,
 ) -> list[dict]:
     """Remove signals that cover the same story as last week's digest."""
-    if not LITELLM_URL or not LITELLM_KEY or not items:
+    if not items:
         return items
 
     from db import get_last_digest
@@ -524,24 +540,14 @@ async def _dedup_signals(
         for i, item in enumerate(items)
     ]
 
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{LITELLM_URL}/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {LITELLM_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": LITELLM_MODEL,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "You deduplicate news signals. Return only valid JSON.",
-                        },
-                        {
-                            "role": "user",
-                            "content": f"""PREVIOUS WEEK's headlines (already sent):
+    messages = [
+        {
+            "role": "system",
+            "content": "You deduplicate news signals. Return only valid JSON.",
+        },
+        {
+            "role": "user",
+            "content": f"""PREVIOUS WEEK's headlines (already sent):
 {json.dumps(prev_headlines, indent=2)}
 
 THIS WEEK's new signals:
@@ -553,23 +559,38 @@ A follow-up development on the same story = NOT a duplicate. Keep it.
 
 Return a JSON array of the "i" indices to KEEP:
 [0, 2, 5, ...]""",
-                        },
-                    ],
-                    "max_tokens": 200,
-                    "temperature": 0,
-                },
-            )
-            resp.raise_for_status()
+        },
+    ]
 
-        content = resp.json()["choices"][0]["message"]["content"]
+    try:
+        if AICORE_DEPLOYMENT_DEDUP:
+            from aicore import chat_completion
+            data = await chat_completion(AICORE_DEPLOYMENT_DEDUP, messages, max_tokens=200, temperature=0, model="gpt-4o-mini")
+        elif LITELLM_URL and LITELLM_KEY:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{LITELLM_URL}/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {LITELLM_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={"model": LITELLM_MODEL, "messages": messages, "max_tokens": 200, "temperature": 0},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+        else:
+            logger.info("  [dedup] No dedup provider configured, skipping")
+            return items
+
+        content = data["choices"][0]["message"]["content"]
         keep_indices = _parse_json(content)
         if isinstance(keep_indices, list):
             kept = [items[i] for i in keep_indices if isinstance(i, int) and 0 <= i < len(items)]
             if kept:
-                logger.info("  [dedup] %d → %d signals (removed %d duplicates)", len(items), len(kept), len(items) - len(kept))
+                logger.info("  [dedup] %d -> %d signals (removed %d duplicates)", len(items), len(kept), len(items) - len(kept))
                 return kept
     except Exception:
-        logger.warning("  [dedup] LiteLLM call failed, skipping dedup", exc_info=True)
+        logger.warning("  [dedup] Dedup call failed, skipping", exc_info=True)
 
     return items
 
