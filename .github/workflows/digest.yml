@@ -2,17 +2,42 @@ name: Weekly Digest
 
 on:
   schedule:
-    # Every Sunday at 11pm UTC
-    - cron: '0 23 * * 0'
+    # Sunday 8pm CEST (18:00 UTC) - research signals
+    - cron: '0 18 * * 0'
+    # Monday 8am CEST (06:00 UTC) - send emails
+    - cron: '0 6 * * 1'
   workflow_dispatch:
     inputs:
       user_email:
         description: 'Process a specific user (leave blank for all)'
         required: false
         type: string
+      mode:
+        description: 'Pipeline mode'
+        required: false
+        type: choice
+        default: 'both'
+        options:
+          - both
+          - research-only
+          - send-only
+
+env:
+  PPLX_KEY: ${{ secrets.PPLX_KEY }}
+  GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+  GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+  SAP_AICORE_AUTH_URL: ${{ secrets.SAP_AICORE_AUTH_URL }}
+  SAP_AICORE_CLIENT_ID: ${{ secrets.SAP_AICORE_CLIENT_ID }}
+  SAP_AICORE_CLIENT_SECRET: ${{ secrets.SAP_AICORE_CLIENT_SECRET }}
+  SAP_AICORE_BASE_URL: ${{ secrets.SAP_AICORE_BASE_URL }}
+  SAP_AICORE_RESOURCE_GROUP: ${{ secrets.SAP_AICORE_RESOURCE_GROUP }}
+  AICORE_DEPLOYMENT_PPLX: ${{ secrets.AICORE_DEPLOYMENT_PPLX }}
+  AICORE_DEPLOYMENT_GPT4O_MINI: ${{ secrets.AICORE_DEPLOYMENT_GPT4O_MINI }}
 
 jobs:
-  send-digests:
+  digest:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,24 +55,35 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Determine mode
+        id: mode
+        run: |
+          # Cron-triggered: pick mode by day of week
+          # Sunday (0) = research, Monday (1) = send
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            DOW=$(date -u +%u)
+            if [ "$DOW" = "7" ]; then
+              echo "flag=--research-only" >> "$GITHUB_OUTPUT"
+            else
+              echo "flag=--send-only" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "${{ inputs.mode }}" = "research-only" ]; then
+            echo "flag=--research-only" >> "$GITHUB_OUTPUT"
+          elif [ "${{ inputs.mode }}" = "send-only" ]; then
+            echo "flag=--send-only" >> "$GITHUB_OUTPUT"
+          else
+            echo "flag=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run digest pipeline
         env:
-          PPLX_KEY: ${{ secrets.PPLX_KEY }}
-          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          SAP_AICORE_AUTH_URL: ${{ secrets.SAP_AICORE_AUTH_URL }}
-          SAP_AICORE_CLIENT_ID: ${{ secrets.SAP_AICORE_CLIENT_ID }}
-          SAP_AICORE_CLIENT_SECRET: ${{ secrets.SAP_AICORE_CLIENT_SECRET }}
-          SAP_AICORE_BASE_URL: ${{ secrets.SAP_AICORE_BASE_URL }}
-          SAP_AICORE_RESOURCE_GROUP: ${{ secrets.SAP_AICORE_RESOURCE_GROUP }}
-          AICORE_DEPLOYMENT_PPLX: ${{ secrets.AICORE_DEPLOYMENT_PPLX }}
-          AICORE_DEPLOYMENT_GPT4O_MINI: ${{ secrets.AICORE_DEPLOYMENT_GPT4O_MINI }}
           USER_EMAIL: ${{ inputs.user_email }}
         run: |
-          if [ -n "$USER_EMAIL" ]; then
-            python run_digest.py --email "$USER_EMAIL"
-          else
-            python run_digest.py
+          CMD="python run_digest.py"
+          if [ -n "${{ steps.mode.outputs.flag }}" ]; then
+            CMD="$CMD ${{ steps.mode.outputs.flag }}"
           fi
+          if [ -n "$USER_EMAIL" ]; then
+            CMD="$CMD --email \"$USER_EMAIL\""
+          fi
+          eval $CMD
